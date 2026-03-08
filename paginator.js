@@ -339,16 +339,20 @@ class View {
         this.expand()
     }
     setImageSize() {
-        const { width, height, margin } = this.#layout
+        const { width, height, margin, flow } = this.#layout
         const vertical = this.#vertical
         const doc = this.document
+        const isScrolled = flow === 'scrolled'
         for (const el of doc.body.querySelectorAll('img, svg, video')) {
             // preserve max size if they are already set
             const { maxHeight, maxWidth } = doc.defaultView.getComputedStyle(el)
             setStylesImportant(el, {
-                'max-height': vertical
-                    ? (maxHeight !== 'none' && maxHeight !== '0px' ? maxHeight : '100%')
-                    : `${height - margin * 2}px`,
+                // In scrolled mode, don't constrain height — let images flow naturally
+                'max-height': isScrolled
+                    ? 'none'
+                    : vertical
+                        ? (maxHeight !== 'none' && maxHeight !== '0px' ? maxHeight : '100%')
+                        : `${height - margin * 2}px`,
                 'max-width': vertical
                     ? `${width - margin * 2}px`
                     : (maxWidth !== 'none' && maxWidth !== '0px' ? maxWidth : '100%'),
@@ -725,7 +729,7 @@ export class Paginator extends HTMLElement {
             this.#header.replaceChildren()
             this.#footer.replaceChildren()
 
-            return { flow, margin, gap, columnWidth }
+            return { flow, margin, gap, columnWidth, width, height }
         }
 
         const divisor = Math.min(maxColumnCount, Math.ceil(size / maxInlineSize))
