@@ -30,7 +30,7 @@ const getViewport = (doc, viewport) => {
 }
 
 export class FixedLayout extends HTMLElement {
-    static observedAttributes = ['zoom']
+    static observedAttributes = ['zoom', 'spread']
     #root = this.attachShadow({ mode: 'closed' })
     #observer = new ResizeObserver(() => this.#render())
     #spreads
@@ -66,6 +66,15 @@ export class FixedLayout extends HTMLElement {
                     ? parseFloat(value) : value
                 this.#render()
                 break
+            case 'spread': {
+                if (!this.book) break
+                const sectionIndex = this.index
+                this.book.rendition = this.book.rendition ?? {}
+                this.book.rendition.spread = value === 'none' ? 'none' : undefined
+                this.open(this.book)
+                if (sectionIndex >= 0) this.goTo({ index: sectionIndex })
+                break
+            }
         }
     }
     async #createFrame({ index, src: srcOption }) {
