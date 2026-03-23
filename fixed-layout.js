@@ -125,22 +125,25 @@ export class FixedLayout extends HTMLElement {
         const blankWidth = left.width ?? right.width ?? 0
         const blankHeight = left.height ?? right.height ?? 0
 
+        const fitPageScale = (portrait || this.#center
+            ? Math.min(
+                width / (target.width ?? blankWidth),
+                height / (target.height ?? blankHeight))
+            : Math.min(
+                width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)),
+                height / Math.max(
+                    left.height ?? blankHeight,
+                    right.height ?? blankHeight))
+        ) || 1
+
         const scale = typeof this.#zoom === 'number' && !isNaN(this.#zoom)
-            ? this.#zoom
+            ? fitPageScale * this.#zoom
             : (this.#zoom === 'fit-width'
                 ? (portrait || this.#center
                     ? width / (target.width ?? blankWidth)
                     : width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)))
-                : (portrait || this.#center
-                    ? Math.min(
-                        width / (target.width ?? blankWidth),
-                        height / (target.height ?? blankHeight))
-                    : Math.min(
-                        width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)),
-                        height / Math.max(
-                            left.height ?? blankHeight,
-                            right.height ?? blankHeight)))
-            ) || 1
+                : fitPageScale
+            )
 
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
