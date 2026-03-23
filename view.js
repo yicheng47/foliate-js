@@ -403,12 +403,20 @@ export class View extends HTMLElement {
     }
     #createOverlayer({ doc, index }) {
         const overlayer = new Overlayer()
-        doc.addEventListener('click', e => {
-            const [value, range] = overlayer.hitTest(e)
-            if (value && !value.startsWith(SEARCH_PREFIX)) {
-                this.#emit('show-annotation', { value, index, range })
-            }
-        }, false)
+        // Only add click handler once per document to avoid duplicates
+        // when create-overlayer fires multiple times (e.g. on zoom changes)
+        if (!doc._foliateOverlayerClick) {
+            doc._foliateOverlayerClick = true
+            doc.addEventListener('click', e => {
+                const obj = this.#getOverlayer(index)
+                if (obj) {
+                    const [value, range] = obj.overlayer.hitTest(e)
+                    if (value && !value.startsWith(SEARCH_PREFIX)) {
+                        this.#emit('show-annotation', { value, index, range })
+                    }
+                }
+            }, false)
+        }
 
         const list = this.#searchResults.get(index)
         if (list) for (const item of list) this.addAnnotation(item)

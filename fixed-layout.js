@@ -107,6 +107,7 @@ export class FixedLayout extends HTMLElement {
                     width: parseFloat(width),
                     height: parseFloat(height),
                     onZoom,
+                    index,
                 })
             }, { once: true })
             iframe.src = src
@@ -144,7 +145,12 @@ export class FixedLayout extends HTMLElement {
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
             if (!iframe) return
-            if (onZoom) onZoom({ doc: frame.iframe.contentDocument, scale })
+            if (onZoom) {
+                const p = onZoom({ doc: frame.iframe.contentDocument, scale })
+                if (frame.index != null && p?.then) {
+                    p.then(() => this.#setupOverlayer(frame))
+                }
+            }
             const iframeScale = onZoom ? scale : 1
             Object.assign(iframe.style, {
                 width: `${width * iframeScale}px`,
@@ -314,11 +320,33 @@ export class FixedLayout extends HTMLElement {
         const s = this.rtl ? this.#goRight() : this.#goLeft()
         if (!s) return this.goToSpread(this.#index - 1, this.rtl ? 'left' : 'right', 'page')
     }
-    getContents() {
-        return Array.from(this.#root.querySelectorAll('iframe'), frame => ({
-            doc: frame.contentDocument,
-            // TODO: index, overlayer
+    #setupOverlayer(frame) {
+        // Only set up if this frame is still displayed
+        if (![this.#left, this.#right, this.#center].includes(frame)) return
+        const doc = frame.iframe.contentDocument
+        this.dispatchEvent(new CustomEvent('create-overlayer', {
+            detail: {
+                doc,
+                index: frame.index,
+                attach: overlayer => {
+                    if (frame.overlayer) frame.overlayer.element.remove()
+                    frame.overlayer = overlayer
+                    frame.element.style.position = 'relative'
+                    frame.element.append(overlayer.element)
+                },
+            },
         }))
+    }
+    getContents() {
+        const frames = [this.#left, this.#right, this.#center].filter(Boolean)
+        return Array.from(this.#root.querySelectorAll('iframe'), iframe => {
+            const frame = frames.find(f => f.iframe === iframe)
+            return {
+                doc: iframe.contentDocument,
+                index: frame?.index,
+                overlayer: frame?.overlayer,
+            }
+        })
     }
     destroy() {
         this.#observer.unobserve(this)
