@@ -118,32 +118,32 @@ export class FixedLayout extends HTMLElement {
         const left = this.#left ?? {}
         const right = this.#center ?? this.#right ?? {}
         const target = side === 'left' ? left : right
-        const { width, height } = this.getBoundingClientRect()
+        // Use clientWidth/clientHeight instead of getBoundingClientRect()
+        // because getBoundingClientRect() includes CSS transforms, which
+        // causes a feedback loop when zoom is applied via CSS transform
+        const width = this.clientWidth, height = this.clientHeight
         const portrait = this.spread !== 'both' && this.spread !== 'portrait'
             && height > width
         this.#portrait = portrait
         const blankWidth = left.width ?? right.width ?? 0
         const blankHeight = left.height ?? right.height ?? 0
 
-        const fitPageScale = (portrait || this.#center
-            ? Math.min(
-                width / (target.width ?? blankWidth),
-                height / (target.height ?? blankHeight))
-            : Math.min(
-                width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)),
-                height / Math.max(
-                    left.height ?? blankHeight,
-                    right.height ?? blankHeight))
-        ) || 1
-
         const scale = typeof this.#zoom === 'number' && !isNaN(this.#zoom)
-            ? fitPageScale * this.#zoom
+            ? this.#zoom
             : (this.#zoom === 'fit-width'
                 ? (portrait || this.#center
                     ? width / (target.width ?? blankWidth)
                     : width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)))
-                : fitPageScale
-            )
+                : (portrait || this.#center
+                    ? Math.min(
+                        width / (target.width ?? blankWidth),
+                        height / (target.height ?? blankHeight))
+                    : Math.min(
+                        width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)),
+                        height / Math.max(
+                            left.height ?? blankHeight,
+                            right.height ?? blankHeight)))
+            ) || 1
 
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
