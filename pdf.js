@@ -47,14 +47,55 @@ const render = async (page, doc, zoom) => {
             display: 'none',
         })
 
-    // fix text selection
-    // https://github.com/mozilla/pdf.js/blob/642b9a5ae67ef642b9a8808fd9efd447e8c350e2/web/text_layer_builder.js#L105-L107
-    const endOfContent = document.createElement('div')
+    // fix text selection for WebKit/Chrome
+    // adapted from https://github.com/mozilla/pdf.js/pull/17923
+    const endOfContent = doc.createElement('div')
     endOfContent.className = 'endOfContent'
     container.append(endOfContent)
-    // TODO: this only works in Firefox; see https://github.com/mozilla/pdf.js/pull/17923
-    container.onpointerdown = () => container.classList.add('selecting')
-    container.onpointerup = () => container.classList.remove('selecting')
+
+    let prevRange = null
+
+    container.addEventListener('mousedown', () => {
+        endOfContent.classList.add('active')
+    })
+
+    doc.addEventListener('pointerup', () => {
+        container.append(endOfContent)
+        endOfContent.classList.remove('active')
+        prevRange = null
+    })
+
+    doc.addEventListener('selectionchange', () => {
+        const selection = doc.getSelection()
+        if (selection.rangeCount === 0) {
+            container.append(endOfContent)
+            endOfContent.classList.remove('active')
+            return
+        }
+
+        const range = selection.getRangeAt(0)
+        if (!range.intersectsNode(container)) return
+
+        endOfContent.classList.add('active')
+
+        // Move endOfContent adjacent to the selection's moving end,
+        // acting as a user-select:none barrier to prevent selection jumps
+        const modifyStart = prevRange &&
+            (range.compareBoundaryPoints(Range.END_TO_END, prevRange) === 0 ||
+             range.compareBoundaryPoints(Range.START_TO_END, prevRange) === 0)
+
+        let anchor = modifyStart ? range.startContainer : range.endContainer
+        if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode
+
+        if (container.contains(anchor) && anchor !== container && anchor.parentElement) {
+            anchor.parentElement.insertBefore(
+                endOfContent,
+                modifyStart ? anchor : anchor.nextSibling
+            )
+        }
+
+        prevRange = range.cloneRange()
+    })
 
     const div = doc.querySelector('.annotationLayer')
     const linkService = {
