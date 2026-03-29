@@ -148,7 +148,11 @@ const renderPage = async (page, getImageBlob) => {
         <div class="textLayer"></div>
         <div class="annotationLayer"></div>
     `], { type: 'text/html' }))
-    const onZoom = ({ doc, scale }) => render(page, doc, scale)
+    let zoomTimeout = 0
+    const onZoom = ({ doc, scale }) => {
+        clearTimeout(zoomTimeout)
+        zoomTimeout = setTimeout(() => render(page, doc, scale), 200)
+    }
     return { src, onZoom }
 }
 
