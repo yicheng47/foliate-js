@@ -30,9 +30,18 @@ const getViewport = (doc, viewport) => {
 }
 
 export class FixedLayout extends HTMLElement {
-    static observedAttributes = ['zoom', 'spread']
+    static observedAttributes = ['zoom', 'spread', 'resize-dragging']
     #root = this.attachShadow({ mode: 'closed' })
-    #observer = new ResizeObserver(() => this.#render())
+    #resizeRafId = 0
+    #observer = new ResizeObserver(() => {
+        if (this.hasAttribute('resize-dragging')) return
+        if (!this.#resizeRafId) {
+            this.#resizeRafId = requestAnimationFrame(() => {
+                this.#resizeRafId = 0
+                this.#render()
+            })
+        }
+    })
     #spreads
     #index = -1
     defaultViewport
@@ -75,6 +84,9 @@ export class FixedLayout extends HTMLElement {
                 if (sectionIndex >= 0) this.goTo({ index: sectionIndex })
                 break
             }
+            case 'resize-dragging':
+                if (value == null) this.#render()
+                break
         }
     }
     async #createFrame({ index, src: srcOption }) {

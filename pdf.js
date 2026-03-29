@@ -137,6 +137,11 @@ const renderPage = async (page, getImageBlob) => {
           --scale-round-y: 1px;
         }
         ${textLayerBuilderCSS}
+        /* override pdfjs selection color for consistent appearance in WebKit;
+           AccentColor/color-mix can be unreliable in iframe contexts */
+        .textLayer ::selection {
+            background: rgba(56 117 215 / 0.25);
+        }
         ${annotationLayerBuilderCSS}
         </style>
         <div id="canvas"></div>

@@ -431,9 +431,22 @@ export class Paginator extends HTMLElement {
     static observedAttributes = [
         'flow', 'gap', 'margin',
         'max-inline-size', 'max-block-size', 'max-column-count',
+        'resize-dragging',
     ]
     #root = this.attachShadow({ mode: 'closed' })
-    #observer = new ResizeObserver(() => this.render())
+    #resizeRafId = 0
+    #observer = new ResizeObserver(() => {
+        // During panel drag resize, skip intermediate renders entirely;
+        // we'll get one final render when the drag ends via attributeChangedCallback.
+        if (this.hasAttribute('resize-dragging')) return
+        // Debounce with rAF so at most one render happens per frame
+        if (!this.#resizeRafId) {
+            this.#resizeRafId = requestAnimationFrame(() => {
+                this.#resizeRafId = 0
+                this.render()
+            })
+        }
+    })
     #top
     #background
     #container
@@ -650,6 +663,10 @@ export class Paginator extends HTMLElement {
                 // needs explicit `render()` as it doesn't necessarily resize
                 this.#top.style.setProperty('--_' + name, value)
                 this.render()
+                break
+            case 'resize-dragging':
+                // When drag ends (attribute removed), do one final render
+                if (value == null) this.render()
                 break
         }
     }
