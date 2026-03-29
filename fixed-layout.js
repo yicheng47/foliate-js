@@ -32,15 +32,11 @@ const getViewport = (doc, viewport) => {
 export class FixedLayout extends HTMLElement {
     static observedAttributes = ['zoom', 'spread', 'resize-dragging']
     #root = this.attachShadow({ mode: 'closed' })
-    #resizeRafId = 0
+    #resizeTimeout = 0
     #observer = new ResizeObserver(() => {
         if (this.hasAttribute('resize-dragging')) return
-        if (!this.#resizeRafId) {
-            this.#resizeRafId = requestAnimationFrame(() => {
-                this.#resizeRafId = 0
-                this.#render()
-            })
-        }
+        clearTimeout(this.#resizeTimeout)
+        this.#resizeTimeout = setTimeout(() => this.#render(), 150)
     })
     #spreads
     #index = -1

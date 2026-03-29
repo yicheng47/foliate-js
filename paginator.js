@@ -434,18 +434,14 @@ export class Paginator extends HTMLElement {
         'resize-dragging',
     ]
     #root = this.attachShadow({ mode: 'closed' })
-    #resizeRafId = 0
+    #resizeTimeout = 0
     #observer = new ResizeObserver(() => {
         // During panel drag resize, skip intermediate renders entirely;
         // we'll get one final render when the drag ends via attributeChangedCallback.
         if (this.hasAttribute('resize-dragging')) return
-        // Debounce with rAF so at most one render happens per frame
-        if (!this.#resizeRafId) {
-            this.#resizeRafId = requestAnimationFrame(() => {
-                this.#resizeRafId = 0
-                this.render()
-            })
-        }
+        // Debounce: wait until resizing settles before re-rendering
+        clearTimeout(this.#resizeTimeout)
+        this.#resizeTimeout = setTimeout(() => this.render(), 150)
     })
     #top
     #background
