@@ -149,10 +149,17 @@ const renderPage = async (page, getImageBlob) => {
         <div class="annotationLayer"></div>
     `], { type: 'text/html' }))
     let zoomTimeout = 0
-    const onZoom = ({ doc, scale }) => {
+    // Returns a promise that resolves once the debounced render completes.
+    // Both the existing fixed-layout viewer and the new scroll viewer chain on
+    // this promise to dispatch `create-overlayer` after the canvas/text layer
+    // are in place.
+    const onZoom = ({ doc, scale }) => new Promise(resolve => {
         clearTimeout(zoomTimeout)
-        zoomTimeout = setTimeout(() => render(page, doc, scale), 200)
-    }
+        zoomTimeout = setTimeout(async () => {
+            await render(page, doc, scale)
+            resolve()
+        }, 200)
+    })
     return { src, onZoom }
 }
 
@@ -208,6 +215,18 @@ export const makePDF = async file => {
         },
         size: 1000,
     }))
+
+    // Expose natural page sizes without rendering — used by scroll mode to
+    // reserve placeholder space before iframes are mounted.
+    const sizeCache = new Map()
+    book.getPageSize = async i => {
+        if (sizeCache.has(i)) return sizeCache.get(i)
+        const page = await pdf.getPage(i + 1)
+        const { width, height } = page.getViewport({ scale: 1 })
+        const size = { width, height }
+        sizeCache.set(i, size)
+        return size
+    }
     book.isExternal = uri => /^\w+:/i.test(uri)
     book.resolveHref = async href => {
         const parsed = JSON.parse(href)

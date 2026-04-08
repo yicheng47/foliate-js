@@ -249,7 +249,14 @@ export class View extends HTMLElement {
         }
 
         this.isFixedLayout = this.book.rendition?.layout === 'pre-paginated'
-        if (this.isFixedLayout) {
+        // Allow consumers to request the continuous-scroll PDF renderer
+        // instead of the page-at-a-time fixed-layout one by setting
+        // `pdf-mode="scroll"` on the view element before calling open().
+        const pdfMode = this.getAttribute('pdf-mode')
+        if (this.isFixedLayout && pdfMode === 'scroll') {
+            await import('./pdf-scroll.js')
+            this.renderer = document.createElement('foliate-pdf-scroll')
+        } else if (this.isFixedLayout) {
             await import('./fixed-layout.js')
             this.renderer = document.createElement('foliate-fxl')
         } else {
