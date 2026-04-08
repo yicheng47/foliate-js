@@ -28,9 +28,22 @@ const render = async (page, doc, zoom) => {
     await page.render({ canvasContext, viewport }).promise
     doc.querySelector('#canvas').replaceChildren(doc.adoptNode(canvas))
 
+    // pdfjs TextLayer.render() only appends spans — without clearing first,
+    // re-renders (zoom, resize) stack duplicate transparent spans on top of
+    // each other and the overlapping hit-targets make selection feel sloppy.
     const container = doc.querySelector('.textLayer')
+    container.replaceChildren()
+    // Match the params upstream pdfjs's text_layer_builder.js uses:
+    //   - includeMarkedContent groups spans by their PDF logical structure
+    //     (paragraphs, etc.) which keeps DOM order closer to reading order
+    //     and gives the selection algorithm a saner tree to walk.
+    //   - disableNormalization keeps the original glyph order so spans land
+    //     in the same sequence as the canvas draws them.
     const textLayer = new pdfjsLib.TextLayer({
-        textContentSource: await page.streamTextContent(),
+        textContentSource: await page.streamTextContent({
+            includeMarkedContent: true,
+            disableNormalization: true,
+        }),
         container, viewport,
     })
     await textLayer.render()
@@ -49,53 +62,108 @@ const render = async (page, doc, zoom) => {
 
     // fix text selection for WebKit/Chrome
     // adapted from https://github.com/mozilla/pdf.js/pull/17923
+    //
+    // endOfContent is the user-select:none barrier that gets moved next to
+    // the selection's moving end. It lives inside the text layer (cleared
+    // above), so we re-create it each render and stash it on the doc for
+    // the one-time listeners below to find via doc.__foliateEndOfContent.
     const endOfContent = doc.createElement('div')
     endOfContent.className = 'endOfContent'
     container.append(endOfContent)
+    doc.__foliateEndOfContent = endOfContent
 
-    let prevRange = null
+    // Install the selection listeners exactly once per doc. Previously they
+    // were attached on every render(), so each zoom/resize stacked another
+    // generation of listeners that fought over different endOfContent
+    // instances and made selection feel janky.
+    if (!doc.__foliateSelectionFixInstalled) {
+        doc.__foliateSelectionFixInstalled = true
 
-    container.addEventListener('mousedown', () => {
-        endOfContent.classList.add('active')
-    })
+        let prevRange = null
 
-    doc.addEventListener('pointerup', () => {
-        container.append(endOfContent)
-        endOfContent.classList.remove('active')
-        prevRange = null
-    })
-
-    doc.addEventListener('selectionchange', () => {
-        const selection = doc.getSelection()
-        if (selection.rangeCount === 0) {
-            container.append(endOfContent)
-            endOfContent.classList.remove('active')
-            return
+        const reset = () => {
+            const eoc = doc.__foliateEndOfContent
+            if (eoc) {
+                container.append(eoc)
+                eoc.style.width = ''
+                eoc.style.height = ''
+                eoc.classList.remove('active')
+            }
         }
 
-        const range = selection.getRangeAt(0)
-        if (!range.intersectsNode(container)) return
+        container.addEventListener('mousedown', () => {
+            doc.__foliateEndOfContent?.classList.add('active')
+        })
 
-        endOfContent.classList.add('active')
+        doc.addEventListener('pointerup', () => {
+            reset()
+            prevRange = null
+        })
 
-        // Move endOfContent adjacent to the selection's moving end,
-        // acting as a user-select:none barrier to prevent selection jumps
-        const modifyStart = prevRange &&
-            (range.compareBoundaryPoints(Range.END_TO_END, prevRange) === 0 ||
-             range.compareBoundaryPoints(Range.START_TO_END, prevRange) === 0)
+        doc.addEventListener('selectionchange', () => {
+            const eoc = doc.__foliateEndOfContent
+            if (!eoc) return
+            const selection = doc.getSelection()
+            if (selection.rangeCount === 0) {
+                reset()
+                return
+            }
 
-        let anchor = modifyStart ? range.startContainer : range.endContainer
-        if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode
+            const range = selection.getRangeAt(0)
+            if (!range.intersectsNode(container)) return
 
-        if (container.contains(anchor) && anchor !== container && anchor.parentElement) {
-            anchor.parentElement.insertBefore(
-                endOfContent,
-                modifyStart ? anchor : anchor.nextSibling
-            )
-        }
+            // Click-to-cancel produces a collapsed range. We must NOT
+            // re-position the barrier or restyle it here — doing so
+            // mid-cancel can leave the previous selection's highlight
+            // visually stuck. Just reset the barrier and bail.
+            if (selection.isCollapsed) {
+                reset()
+                return
+            }
 
-        prevRange = range.cloneRange()
-    })
+            eoc.classList.add('active')
+
+            // Detect which boundary is the moving end. If the new range's
+            // END matches the previous END (or matches the previous START,
+            // for the direction-flip case), then the START is moving.
+            const modifyStart = prevRange &&
+                (range.compareBoundaryPoints(Range.END_TO_END, prevRange) === 0 ||
+                 range.compareBoundaryPoints(Range.START_TO_END, prevRange) === 0)
+
+            let anchor = modifyStart ? range.startContainer : range.endContainer
+            if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode
+            if (anchor.classList?.contains('highlight')) anchor = anchor.parentNode
+
+            // Forward-selection edge case: when the focus has just barely
+            // entered offset 0 of a new text node, the cursor is logically
+            // still in the gap before it — walk back to the previous span
+            // so the barrier lands behind the gap, not after the new node.
+            // (mozilla/pdf.js text_layer_builder.js)
+            if (!modifyStart && range.endOffset === 0) {
+                do {
+                    while (!anchor.previousSibling) anchor = anchor.parentNode
+                    anchor = anchor.previousSibling
+                } while (!anchor.childNodes.length)
+            }
+
+            if (container.contains(anchor) && anchor !== container && anchor.parentElement) {
+                // Size the barrier to cover the textLayer and make it
+                // selectable so the browser's drag-selection algorithm has
+                // a stable place to land when the cursor is over empty
+                // space — this is what kills the "selection jumps to
+                // distant span" behaviour in WebKit/Chrome.
+                eoc.style.width = container.style.width
+                eoc.style.height = container.style.height
+                eoc.style.userSelect = 'text'
+                anchor.parentElement.insertBefore(
+                    eoc,
+                    modifyStart ? anchor : anchor.nextSibling
+                )
+            }
+
+            prevRange = range.cloneRange()
+        })
+    }
 
     const div = doc.querySelector('.annotationLayer')
     const linkService = {
@@ -135,6 +203,25 @@ const renderPage = async (page, getImageBlob) => {
           --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
           --scale-round-x: 1px;
           --scale-round-y: 1px;
+        }
+        /* Only the actual glyph spans inside the text layer are selectable.
+         * Without this, mousedown anywhere outside a span (margins, gaps
+         * between words, the canvas, the annotation layer) lands on a
+         * user-select:text container, and the browser places the caret at
+         * the START of that container's text content — which is the first
+         * span on the page. The result is that any drag begun "a bit off"
+         * a word starts the selection from the top of the page. */
+        html, body, #canvas, .annotationLayer {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .textLayer {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .textLayer span, .textLayer br {
+            -webkit-user-select: text;
+            user-select: text;
         }
         ${textLayerBuilderCSS}
         /* override pdfjs selection color for consistent appearance in WebKit;

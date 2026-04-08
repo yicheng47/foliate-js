@@ -145,10 +145,7 @@ export class PDFScroll extends HTMLElement {
 
         // Restore scroll position to the row containing the previously-active page.
         const targetRow = this.#rows.find(r => r.slots.some(s => s.index === wasIndex))
-        if (targetRow) {
-            // scrollIntoView on the shadow root doesn't work on the host; use offsetTop
-            this.scrollTop = targetRow.element.offsetTop
-        }
+        if (targetRow) this.#scrollRowToTop(targetRow)
         // Kick off an initial relocate so listeners know the current page.
         this.#reportLocation('page')
     }
@@ -388,11 +385,21 @@ export class PDFScroll extends HTMLElement {
         const index = resolved?.index ?? 0
         const row = this.#rows.find(r => r.slots.some(s => s.index === index))
         if (!row) return
-        this.scrollTop = row.element.offsetTop
+        this.#scrollRowToTop(row)
         // Force an immediate relocate so listeners get the new index
         // even if the scroll event coalesces.
         this.#reportedIndex = -1
         this.#reportLocation('page')
+    }
+
+    // offsetTop is unreliable inside shadow DOM (the row's offsetParent
+    // walks past the shadow boundary and returns viewport-relative
+    // coordinates instead of scroll-container-relative ones), so compute
+    // the scroll delta from bounding rects instead.
+    #scrollRowToTop(row) {
+        const rowRect = row.element.getBoundingClientRect()
+        const hostRect = this.getBoundingClientRect()
+        this.scrollTop += rowRect.top - hostRect.top
     }
 
     async next() {
