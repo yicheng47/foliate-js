@@ -27,6 +27,8 @@ export class PDFScroll extends HTMLElement {
     #zoom = 1             // number | 'fit-width' | 'fit-page'
     #spread = 'none'      // 'none' | 'auto'
     #scrollRaf = 0
+    #resizeTimeout = 0
+    #resizeObserver
     #reportedIndex = -1
     book
 
@@ -117,6 +119,14 @@ export class PDFScroll extends HTMLElement {
             Array.from({ length: n }, (_, i) => getSize(i).catch(() => ({ width: 800, height: 1000 })))
         )
         this.#rebuildRows()
+        // Re-layout when the container is resized (e.g. side panel open/close).
+        this.#resizeObserver?.disconnect()
+        this.#resizeObserver = new ResizeObserver(() => {
+            if (this.hasAttribute('resize-dragging')) return
+            clearTimeout(this.#resizeTimeout)
+            this.#resizeTimeout = setTimeout(() => this.#layoutAll(), 150)
+        })
+        this.#resizeObserver.observe(this)
     }
 
     #rebuildRows() {
@@ -437,6 +447,8 @@ export class PDFScroll extends HTMLElement {
     destroy() {
         this.#observer?.disconnect()
         this.#observer = null
+        this.#resizeObserver?.disconnect()
+        this.#resizeObserver = null
         for (const row of this.#rows) {
             for (const slot of row.slots) this.#unmountSlot(slot)
         }
