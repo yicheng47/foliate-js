@@ -268,7 +268,9 @@ export class View extends HTMLElement {
         this.renderer.addEventListener('relocate', e => this.#onRelocate(e.detail))
         this.renderer.addEventListener('create-overlayer', e =>
             e.detail.attach(this.#createOverlayer(e.detail)))
-        this.renderer.open(book)
+        // PDF scroll precomputes page sizes asynchronously; init() must not
+        // run until the renderer has built its row list, or goTo() is a no-op.
+        await this.renderer.open(book)
         this.#root.append(this.renderer)
 
         if (book.sections.some(section => section.mediaOverlay)) {
