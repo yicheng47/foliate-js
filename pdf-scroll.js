@@ -157,7 +157,7 @@ export class PDFScroll extends HTMLElement {
         const targetRow = this.#rows.find(r => r.slots.some(s => s.index === wasIndex))
         if (targetRow) this.#scrollRowToTop(targetRow)
         // Kick off an initial relocate so listeners know the current page.
-        this.#reportLocation('page')
+        this.#reportLocation('page', targetRow ? wasIndex : null)
     }
 
     #createRow(firstIndex, leftSize, rightSize) {
@@ -365,26 +365,30 @@ export class PDFScroll extends HTMLElement {
         this.#scrollRaf = requestAnimationFrame(() => this.#reportLocation('scroll'))
     }
 
-    #reportLocation(reason) {
+    #reportLocation(reason, explicitIndex = null) {
         if (!this.#rows.length) return
         // Current page = first page of the topmost row whose bottom crosses
         // the viewport's midline.
-        const viewportMid = this.scrollTop + this.clientHeight / 2
-        let currentIndex = this.#rows[this.#rows.length - 1].slots[0].index
-        for (const row of this.#rows) {
-            const top = row.element.offsetTop
-            const bottom = top + row.element.offsetHeight
-            if (bottom >= viewportMid) {
-                currentIndex = row.slots[0].index
-                break
+        let currentIndex = explicitIndex
+        if (currentIndex == null) {
+            const viewportMid = this.scrollTop + this.clientHeight / 2
+            currentIndex = this.#rows[this.#rows.length - 1].slots[0].index
+            for (const row of this.#rows) {
+                const top = row.element.offsetTop
+                const bottom = top + row.element.offsetHeight
+                if (bottom >= viewportMid) {
+                    currentIndex = row.slots[0].index
+                    break
+                }
             }
         }
         if (currentIndex === this.#reportedIndex && reason === 'scroll') return
         this.#reportedIndex = currentIndex
-        const total = this.#pageSizes.length
-        const fraction = total > 1 ? currentIndex / (total - 1) : 0
+        // `foliate-view` expects `fraction` to be progress within the current
+        // section. PDFs model each page as one section, so page-level reporting
+        // should use the top of that section rather than a document fraction.
         this.dispatchEvent(new CustomEvent('relocate', {
-            detail: { reason, range: null, index: currentIndex, fraction, size: 1 },
+            detail: { reason, range: null, index: currentIndex, fraction: 0, size: 1 },
         }))
     }
 
@@ -399,7 +403,7 @@ export class PDFScroll extends HTMLElement {
         // Force an immediate relocate so listeners get the new index
         // even if the scroll event coalesces.
         this.#reportedIndex = -1
-        this.#reportLocation('page')
+        this.#reportLocation('page', index)
     }
 
     // offsetTop is unreliable inside shadow DOM (the row's offsetParent
