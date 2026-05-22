@@ -274,12 +274,19 @@ export const makePDF = async file => {
     // construct itself (pdf.mjs `PDFWorker.destroy`).
     const worker = new Worker(pdfjsPath('pdf.worker.mjs'), { type: 'module' })
     pdfjsLib.GlobalWorkerOptions.workerPort = worker
-    const pdf = await pdfjsLib.getDocument({
-        range: transport,
-        cMapUrl: pdfjsPath('cmaps/'),
-        standardFontDataUrl: pdfjsPath('standard_fonts/'),
-        isEvalSupported: false,
-    }).promise
+    let pdf
+    try {
+        pdf = await pdfjsLib.getDocument({
+            range: transport,
+            cMapUrl: pdfjsPath('cmaps/'),
+            standardFontDataUrl: pdfjsPath('standard_fonts/'),
+            isEvalSupported: false,
+        }).promise
+    } catch (err) {
+        // book.destroy isn't installed yet, so callers can't terminate it.
+        worker.terminate()
+        throw err
+    }
 
     const book = { rendition: { layout: 'pre-paginated' } }
 

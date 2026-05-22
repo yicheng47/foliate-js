@@ -304,6 +304,12 @@ export class View extends HTMLElement {
     close() {
         this.renderer?.destroy()
         this.renderer?.remove()
+        // Release book-owned resources (PDF.js Worker, etc.). Fire-and-forget:
+        // pdf.destroy() can stall if its worker is wedged, and close() must
+        // stay synchronous for the rest of the cleanup. The catch swallows
+        // teardown noise (we're tearing down anyway).
+        this.book?.destroy?.()?.catch?.(() => {})
+        this.book = null
         this.#sectionProgress = null
         this.#tocProgress = null
         this.#pageProgress = null
