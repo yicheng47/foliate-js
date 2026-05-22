@@ -274,6 +274,12 @@ export const makePDF = async file => {
     // construct itself (pdf.mjs `PDFWorker.destroy`).
     const worker = new Worker(pdfjsPath('pdf.worker.mjs'), { type: 'module' })
     pdfjsLib.GlobalWorkerOptions.workerPort = worker
+
+    // Until `return book`, no caller has a handle to terminate the Worker:
+    // `view.open()` doesn't assign `this.book = book` until `makePDF()`
+    // resolves, so a throw from any await below (`getDocument`,
+    // `getMetadata`, `getOutline`) would orphan the Worker. Single cleanup
+    // path: tear down pdf if it exists, then terminate the Worker.
     let pdf
     try {
         pdf = await pdfjsLib.getDocument({
@@ -282,77 +288,80 @@ export const makePDF = async file => {
             standardFontDataUrl: pdfjsPath('standard_fonts/'),
             isEvalSupported: false,
         }).promise
+
+        const book = { rendition: { layout: 'pre-paginated' } }
+
+        const { metadata, info } = await pdf.getMetadata() ?? {}
+        // TODO: for better results, parse `metadata.getRaw()`
+        book.metadata = {
+            title: metadata?.get('dc:title') ?? info?.Title,
+            author: metadata?.get('dc:creator') ?? info?.Author,
+            contributor: metadata?.get('dc:contributor'),
+            description: metadata?.get('dc:description') ?? info?.Subject,
+            language: metadata?.get('dc:language'),
+            publisher: metadata?.get('dc:publisher'),
+            subject: metadata?.get('dc:subject'),
+            identifier: metadata?.get('dc:identifier'),
+            source: metadata?.get('dc:source'),
+            rights: metadata?.get('dc:rights'),
+        }
+
+        const outline = await pdf.getOutline()
+        book.toc = outline?.map(makeTOCItem)
+
+        const cache = new Map()
+        book.sections = Array.from({ length: pdf.numPages }).map((_, i) => ({
+            id: i,
+            load: async () => {
+                const cached = cache.get(i)
+                if (cached) return cached
+                const url = await renderPage(await pdf.getPage(i + 1))
+                cache.set(i, url)
+                return url
+            },
+            size: 1000,
+        }))
+
+        // Expose natural page sizes without rendering — used by scroll mode to
+        // reserve placeholder space before iframes are mounted.
+        const sizeCache = new Map()
+        book.getPageSize = async i => {
+            if (sizeCache.has(i)) return sizeCache.get(i)
+            const page = await pdf.getPage(i + 1)
+            const { width, height } = page.getViewport({ scale: 1 })
+            const size = { width, height }
+            sizeCache.set(i, size)
+            return size
+        }
+        book.isExternal = uri => /^\w+:/i.test(uri)
+        book.resolveHref = async href => {
+            const parsed = JSON.parse(href)
+            const dest = typeof parsed === 'string'
+                ? await pdf.getDestination(parsed) : parsed
+            if (!dest) return null
+            const index = await pdf.getPageIndex(dest[0])
+            return { index }
+        }
+        book.splitTOCHref = async href => {
+            const parsed = JSON.parse(href)
+            const dest = typeof parsed === 'string'
+                ? await pdf.getDestination(parsed) : parsed
+            if (!dest) return null
+            const index = await pdf.getPageIndex(dest[0])
+            return [index, null]
+        }
+        book.getTOCFragment = doc => doc.documentElement
+        book.getCover = async () => renderPage(await pdf.getPage(1), true)
+        book.destroy = async () => {
+            try { await pdf.destroy() } finally { worker.terminate() }
+        }
+        return book
     } catch (err) {
-        // book.destroy isn't installed yet, so callers can't terminate it.
+        // pdf.destroy() can stall on a wedged worker — fire-and-forget so
+        // the original error propagates without being shadowed by teardown.
+        // Always terminate the Worker; that's the resource we actually own.
+        pdf?.destroy?.()?.catch?.(() => {})
         worker.terminate()
         throw err
     }
-
-    const book = { rendition: { layout: 'pre-paginated' } }
-
-    const { metadata, info } = await pdf.getMetadata() ?? {}
-    // TODO: for better results, parse `metadata.getRaw()`
-    book.metadata = {
-        title: metadata?.get('dc:title') ?? info?.Title,
-        author: metadata?.get('dc:creator') ?? info?.Author,
-        contributor: metadata?.get('dc:contributor'),
-        description: metadata?.get('dc:description') ?? info?.Subject,
-        language: metadata?.get('dc:language'),
-        publisher: metadata?.get('dc:publisher'),
-        subject: metadata?.get('dc:subject'),
-        identifier: metadata?.get('dc:identifier'),
-        source: metadata?.get('dc:source'),
-        rights: metadata?.get('dc:rights'),
-    }
-
-    const outline = await pdf.getOutline()
-    book.toc = outline?.map(makeTOCItem)
-
-    const cache = new Map()
-    book.sections = Array.from({ length: pdf.numPages }).map((_, i) => ({
-        id: i,
-        load: async () => {
-            const cached = cache.get(i)
-            if (cached) return cached
-            const url = await renderPage(await pdf.getPage(i + 1))
-            cache.set(i, url)
-            return url
-        },
-        size: 1000,
-    }))
-
-    // Expose natural page sizes without rendering — used by scroll mode to
-    // reserve placeholder space before iframes are mounted.
-    const sizeCache = new Map()
-    book.getPageSize = async i => {
-        if (sizeCache.has(i)) return sizeCache.get(i)
-        const page = await pdf.getPage(i + 1)
-        const { width, height } = page.getViewport({ scale: 1 })
-        const size = { width, height }
-        sizeCache.set(i, size)
-        return size
-    }
-    book.isExternal = uri => /^\w+:/i.test(uri)
-    book.resolveHref = async href => {
-        const parsed = JSON.parse(href)
-        const dest = typeof parsed === 'string'
-            ? await pdf.getDestination(parsed) : parsed
-        if (!dest) return null
-        const index = await pdf.getPageIndex(dest[0])
-        return { index }
-    }
-    book.splitTOCHref = async href => {
-        const parsed = JSON.parse(href)
-        const dest = typeof parsed === 'string'
-            ? await pdf.getDestination(parsed) : parsed
-        if (!dest) return null
-        const index = await pdf.getPageIndex(dest[0])
-        return [index, null]
-    }
-    book.getTOCFragment = doc => doc.documentElement
-    book.getCover = async () => renderPage(await pdf.getPage(1), true)
-    book.destroy = async () => {
-        try { await pdf.destroy() } finally { worker.terminate() }
-    }
-    return book
 }
