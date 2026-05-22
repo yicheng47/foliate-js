@@ -2,7 +2,13 @@ const pdfjsPath = path => new URL(`vendor/pdfjs/${path}`, import.meta.url).toStr
 
 import './vendor/pdfjs/pdf.mjs'
 const pdfjsLib = globalThis.pdfjsLib
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsPath('pdf.worker.mjs')
+// Workers are constructed per-document in makePDF() and passed via
+// `workerPort`. We deliberately don't set `workerSrc`: under custom
+// schemes (tauri://, asset://) pdf.js treats the page origin as opaque
+// ("null") and wraps the worker in a blob: that re-imports the worker
+// URL. macOS 14.x WKWebView stalls silently on that pattern. Going
+// through `workerPort` routes us into pdf.js's `#initializeFromPort`,
+// which skips the blob wrapper entirely.
 
 const fetchText = async url => await (await fetch(url)).text()
 
@@ -263,6 +269,11 @@ export const makePDF = async file => {
             transport.onDataRange(begin, chunk)
         })
     }
+    // See the top-of-file note for why this isn't `workerSrc`. We own the
+    // Worker's lifecycle because pdf.js doesn't terminate ports it didn't
+    // construct itself (pdf.mjs `PDFWorker.destroy`).
+    const worker = new Worker(pdfjsPath('pdf.worker.mjs'), { type: 'module' })
+    pdfjsLib.GlobalWorkerOptions.workerPort = worker
     const pdf = await pdfjsLib.getDocument({
         range: transport,
         cMapUrl: pdfjsPath('cmaps/'),
@@ -333,6 +344,8 @@ export const makePDF = async file => {
     }
     book.getTOCFragment = doc => doc.documentElement
     book.getCover = async () => renderPage(await pdf.getPage(1), true)
-    book.destroy = () => pdf.destroy()
+    book.destroy = async () => {
+        try { await pdf.destroy() } finally { worker.terminate() }
+    }
     return book
 }
