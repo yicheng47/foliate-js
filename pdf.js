@@ -352,8 +352,12 @@ export const makePDF = async file => {
         }
         book.getTOCFragment = doc => doc.documentElement
         book.getCover = async () => renderPage(await pdf.getPage(1), true)
-        book.destroy = async () => {
-            try { await pdf.destroy() } finally { worker.terminate() }
+        book.destroy = () => {
+            // Same shape as the setup catch path above: pdf.destroy() can
+            // stall on a wedged worker, so don't await — fire-and-forget
+            // and unconditionally terminate the Worker we own.
+            pdf.destroy?.()?.catch?.(() => {})
+            worker.terminate()
         }
         return book
     } catch (err) {
