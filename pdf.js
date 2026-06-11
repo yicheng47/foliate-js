@@ -333,22 +333,27 @@ export const makePDF = async file => {
             sizeCache.set(i, size)
             return size
         }
-        book.isExternal = uri => /^\w+:/i.test(uri)
-        book.resolveHref = async href => {
+        const resolveDest = async href => {
             const parsed = JSON.parse(href)
             const dest = typeof parsed === 'string'
                 ? await pdf.getDestination(parsed) : parsed
             if (!dest) return null
             const index = await pdf.getPageIndex(dest[0])
-            return { index }
+            const type = dest[1]?.name ?? dest[1]
+            const top = type === 'XYZ' ? dest[3]
+                : type === 'FitH' || type === 'FitBH' ? dest[2]
+                    : type === 'FitR' ? dest[5]
+                        : null
+            if (typeof top !== 'number' || !Number.isFinite(top)) return { index }
+            const { height } = await book.getPageSize(index)
+            return { index, anchor: { top: Math.max(0, height - top) } }
         }
+        book.isExternal = uri => /^\w+:/i.test(uri)
+        book.resolveHref = resolveDest
         book.splitTOCHref = async href => {
-            const parsed = JSON.parse(href)
-            const dest = typeof parsed === 'string'
-                ? await pdf.getDestination(parsed) : parsed
-            if (!dest) return null
-            const index = await pdf.getPageIndex(dest[0])
-            return [index, null]
+            const resolved = await resolveDest(href)
+            if (!resolved) return null
+            return [resolved.index, null]
         }
         book.getTOCFragment = doc => doc.documentElement
         book.getCover = async () => renderPage(await pdf.getPage(1), true)

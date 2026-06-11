@@ -367,17 +367,19 @@ export class PDFScroll extends HTMLElement {
 
     #reportLocation(reason, explicitIndex = null) {
         if (!this.#rows.length) return
-        // Current page = first page of the topmost row whose bottom crosses
-        // the viewport's midline.
+        // Current page = the row crossing a top-biased reading line. Using
+        // the viewport midpoint makes a lower visible page steal the active
+        // TOC item while the previous page header is still the user's focus.
         let currentIndex = explicitIndex
         if (currentIndex == null) {
-            const viewportMid = this.scrollTop + this.clientHeight / 2
+            const activationLine = this.scrollTop + Math.min(this.clientHeight * 0.15, 120)
             currentIndex = this.#rows[this.#rows.length - 1].slots[0].index
             for (const row of this.#rows) {
                 const top = row.element.offsetTop
                 const bottom = top + row.element.offsetHeight
-                if (bottom >= viewportMid) {
-                    currentIndex = row.slots[0].index
+                if (bottom >= activationLine) {
+                    const currentSlot = row.slots.find(slot => slot.index === this.#reportedIndex)
+                    currentIndex = currentSlot?.index ?? row.slots[0].index
                     break
                 }
             }
@@ -398,8 +400,9 @@ export class PDFScroll extends HTMLElement {
         const resolved = await target
         const index = resolved?.index ?? 0
         const row = this.#rows.find(r => r.slots.some(s => s.index === index))
-        if (!row) return
-        this.#scrollRowToTop(row)
+        const slot = row?.slots.find(s => s.index === index)
+        if (!row || !slot) return
+        this.#scrollSlotToTarget(slot, resolved)
         // Force an immediate relocate so listeners get the new index
         // even if the scroll event coalesces.
         this.#reportedIndex = -1
@@ -410,10 +413,23 @@ export class PDFScroll extends HTMLElement {
     // walks past the shadow boundary and returns viewport-relative
     // coordinates instead of scroll-container-relative ones), so compute
     // the scroll delta from bounding rects instead.
-    #scrollRowToTop(row) {
-        const rowRect = row.element.getBoundingClientRect()
+    #scrollElementToTop(element) {
+        const rect = element.getBoundingClientRect()
         const hostRect = this.getBoundingClientRect()
-        this.scrollTop += rowRect.top - hostRect.top
+        this.scrollTop += rect.top - hostRect.top
+    }
+
+    #scrollRowToTop(row) {
+        this.#scrollElementToTop(row.element)
+    }
+
+    #scrollSlotToTarget(slot, target) {
+        this.#scrollElementToTop(slot.element)
+        const top = target?.anchor?.top
+        if (typeof top !== 'number' || !Number.isFinite(top)) return
+        const scale = slot.naturalHeight ? slot.element.offsetHeight / slot.naturalHeight : 1
+        const offset = Math.max(0, Math.min(slot.naturalHeight, top)) * scale
+        this.scrollTop += offset - this.clientHeight / 2
     }
 
     async next() {
