@@ -258,7 +258,7 @@ const renderPage = async (page, getImageBlob) => {
 
 const makeTOCItem = item => ({
     label: item.title,
-    href: JSON.stringify(item.dest),
+    href: item.dest == null ? undefined : JSON.stringify(item.dest),
     subitems: item.items.length ? item.items.map(makeTOCItem) : null,
 })
 
@@ -334,6 +334,7 @@ export const makePDF = async file => {
             return size
         }
         const resolveDest = async href => {
+            if (!href || href === "null") return null
             const parsed = JSON.parse(href)
             const dest = typeof parsed === 'string'
                 ? await pdf.getDestination(parsed) : parsed
