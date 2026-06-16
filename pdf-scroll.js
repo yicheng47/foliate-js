@@ -18,7 +18,7 @@ const RENDER_BUFFER_VIEWPORTS = 2   // mount within 2 viewport heights
 const UNLOAD_BUFFER_VIEWPORTS = 3   // unmount beyond 3 viewport heights
 
 export class PDFScroll extends HTMLElement {
-    static observedAttributes = ['zoom', 'spread']
+    static observedAttributes = ['zoom', 'spread', 'resize-dragging']
     #root = this.attachShadow({ mode: 'closed' })
     #container
     #rows = []
@@ -43,6 +43,10 @@ export class PDFScroll extends HTMLElement {
                 overflow: auto;
                 background: var(--page-bg, transparent);
             }
+            :host::-webkit-scrollbar { width: 12px; height: 12px; }
+            :host::-webkit-scrollbar-track { background: transparent; }
+            :host::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 9999px; border: 3px solid transparent; background-clip: padding-box; }
+            :host::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.5); border: 3px solid transparent; background-clip: padding-box; }
             .container {
                 display: flex;
                 flex-direction: column;
@@ -89,6 +93,10 @@ export class PDFScroll extends HTMLElement {
         this.addEventListener('scroll', () => this.#onScroll())
     }
 
+    relayout() {
+        this.#layoutAll()
+    }
+
     attributeChangedCallback(name, _, value) {
         if (name === 'zoom') {
             if (value === 'fit-width' || value === 'fit-page') {
@@ -103,6 +111,8 @@ export class PDFScroll extends HTMLElement {
             if (next === this.#spread) return
             this.#spread = next
             if (this.book) this.#rebuildRows()
+        } else if (name === 'resize-dragging') {
+            if (value == null && this.book) this.#layoutAll()
         }
     }
 
@@ -150,7 +160,7 @@ export class PDFScroll extends HTMLElement {
             i += rightSize ? 2 : 1
         }
 
-        this.#layoutAll()
+        this.#layoutAll({ preservePosition: false })
         this.#setupObserver()
 
         // Restore scroll position to the row containing the previously-active page.
@@ -327,8 +337,58 @@ export class PDFScroll extends HTMLElement {
         return Math.min(containerW / maxRowWidth, containerH / maxRowHeight)
     }
 
-    #layoutAll() {
+    #activationOffset() {
+        return Math.min(this.clientHeight * 0.15, 120)
+    }
+
+    #rowTop(row) {
+        const rect = row.element.getBoundingClientRect()
+        const hostRect = this.getBoundingClientRect()
+        return this.scrollTop + rect.top - hostRect.top
+    }
+
+    #rowForIndex(index) {
+        return index >= 0
+            ? this.#rows.find(r => r.slots.some(s => s.index === index))
+            : null
+    }
+
+    #rowAtActivationLine() {
+        const activationLine = this.scrollTop + this.#activationOffset()
+        for (const row of this.#rows) {
+            const top = this.#rowTop(row)
+            const bottom = top + row.element.offsetHeight
+            if (bottom >= activationLine) return row
+        }
+        return this.#rows[this.#rows.length - 1] ?? null
+    }
+
+    #captureScrollAnchor() {
+        const row = this.#rowAtActivationLine()
+            ?? this.#rowForIndex(this.#reportedIndex)
+        if (!row) return null
+        const height = row.element.offsetHeight
+        const offset = this.scrollTop + this.#activationOffset() - this.#rowTop(row)
+        const ratio = height > 0
+            ? Math.max(0, Math.min(1, offset / height))
+            : 0
+        const slot = row.slots.find(s => s.index === this.#reportedIndex)
+            ?? row.slots[0]
+        return { index: slot.index, ratio }
+    }
+
+    #restoreScrollAnchor(anchor) {
+        if (!anchor) return
+        const row = this.#rowForIndex(anchor.index)
+        if (!row) return
+        const top = this.#rowTop(row)
+        const offset = row.element.offsetHeight * anchor.ratio
+        this.scrollTop = Math.max(0, top + offset - this.#activationOffset())
+    }
+
+    #layoutAll({ preservePosition = true } = {}) {
         if (!this.#rows.length) return
+        const anchor = preservePosition ? this.#captureScrollAnchor() : null
         const scale = this.#currentScale()
         for (const row of this.#rows) {
             for (const slot of row.slots) {
@@ -350,6 +410,7 @@ export class PDFScroll extends HTMLElement {
                 }
             }
         }
+        this.#restoreScrollAnchor(anchor)
         // Center horizontally after the new widths are applied. When content
         // is wider than the viewport, parking scrollLeft at the middle of the
         // overflow puts the row's midpoint at the viewport's midpoint — which
@@ -372,10 +433,10 @@ export class PDFScroll extends HTMLElement {
         // TOC item while the previous page header is still the user's focus.
         let currentIndex = explicitIndex
         if (currentIndex == null) {
-            const activationLine = this.scrollTop + Math.min(this.clientHeight * 0.15, 120)
+            const activationLine = this.scrollTop + this.#activationOffset()
             currentIndex = this.#rows[this.#rows.length - 1].slots[0].index
             for (const row of this.#rows) {
-                const top = row.element.offsetTop
+                const top = this.#rowTop(row)
                 const bottom = top + row.element.offsetHeight
                 if (bottom >= activationLine) {
                     const currentSlot = row.slots.find(slot => slot.index === this.#reportedIndex)

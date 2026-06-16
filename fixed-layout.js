@@ -60,9 +60,30 @@ export class FixedLayout extends HTMLElement {
             justify-content: center;
             align-items: center;
             overflow: auto;
+        }
+        :host::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        :host::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        :host::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,0.3);
+            border-radius: 9999px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+        }
+        :host::-webkit-scrollbar-thumb:hover {
+            background: rgba(128,128,128,0.5);
+            border: 3px solid transparent;
+            background-clip: padding-box;
         }`)
 
         this.#observer.observe(this)
+    }
+    relayout() {
+        this.#render()
     }
     attributeChangedCallback(name, _, value) {
         switch (name) {
