@@ -83,6 +83,7 @@ export class FixedLayout extends HTMLElement {
         this.#observer.observe(this)
     }
     relayout() {
+        if (this.hasAttribute('resize-dragging')) return
         this.#render()
     }
     attributeChangedCallback(name, _, value) {

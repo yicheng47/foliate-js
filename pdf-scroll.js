@@ -94,6 +94,7 @@ export class PDFScroll extends HTMLElement {
     }
 
     relayout() {
+        if (this.hasAttribute('resize-dragging')) return
         this.#layoutAll()
     }
 
