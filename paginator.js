@@ -998,13 +998,7 @@ export class Paginator extends HTMLElement {
         if (src) {
             const view = this.#createView()
             const afterLoad = doc => {
-                if (doc.head) {
-                    const $styleBefore = doc.createElement('style')
-                    doc.head.prepend($styleBefore)
-                    const $style = doc.createElement('style')
-                    doc.head.append($style)
-                    this.#styleMap.set(doc, [$styleBefore, $style])
-                }
+                this.#applyStyles(doc, this.#styles)
                 onLoad?.({ doc, index })
             }
             const beforeRender = this.#beforeRender.bind(this)
@@ -1030,7 +1024,6 @@ export class Paginator extends HTMLElement {
             const oldIndex = this.#index
             const onLoad = detail => {
                 this.sections[oldIndex]?.unload?.()
-                this.setStyles(this.#styles)
                 this.dispatchEvent(new CustomEvent('load', { detail }))
             }
             await this.#display(Promise.resolve(this.sections[index].load())
@@ -1120,16 +1113,29 @@ export class Paginator extends HTMLElement {
         }]
         return []
     }
-    setStyles(styles) {
-        this.#styles = styles
-        const $$styles = this.#styleMap.get(this.#view?.document)
-        if (!$$styles) return
+    #applyStyles(doc, styles) {
+        if (!doc?.head) return
+        let $$styles = this.#styleMap.get(doc)
+        if (!$$styles) {
+            const $styleBefore = doc.createElement('style')
+            doc.head.prepend($styleBefore)
+            const $style = doc.createElement('style')
+            doc.head.append($style)
+            $$styles = [$styleBefore, $style]
+            this.#styleMap.set(doc, $$styles)
+        }
         const [$beforeStyle, $style] = $$styles
         if (Array.isArray(styles)) {
             const [beforeStyle, style] = styles
             $beforeStyle.textContent = beforeStyle
             $style.textContent = style
         } else $style.textContent = styles
+    }
+    setStyles(styles) {
+        this.#styles = styles
+        const doc = this.#view?.document
+        if (!doc) return
+        this.#applyStyles(doc, styles)
 
         // NOTE: needs `requestAnimationFrame` in Chromium
         requestAnimationFrame(() =>
