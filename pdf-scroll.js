@@ -34,6 +34,21 @@ export class PDFScroll extends HTMLElement {
 
     constructor() {
         super()
+        const isApplePlatform = typeof navigator !== 'undefined'
+            && /Macintosh|iPhone|iPad|iPod/.test(navigator.userAgent)
+        const scrollbarCSS = isApplePlatform ? '' : `
+            :host::-webkit-scrollbar { width: 8px; height: 8px; }
+            :host::-webkit-scrollbar-track { background: transparent; }
+            :host::-webkit-scrollbar-thumb {
+                background-color: var(--scrollbar-thumb, rgba(128, 128, 128, 0.3));
+                border: 2px solid transparent;
+                background-clip: content-box;
+                border-radius: 9999px;
+            }
+            :host::-webkit-scrollbar-thumb:hover {
+                background-color: var(--scrollbar-thumb-hover, rgba(128, 128, 128, 0.5));
+            }
+            :host::-webkit-scrollbar-corner { background: transparent; }`
         const sheet = new CSSStyleSheet()
         sheet.replaceSync(`
             :host {
@@ -42,11 +57,7 @@ export class PDFScroll extends HTMLElement {
                 height: 100%;
                 overflow: auto;
                 background: var(--page-bg, transparent);
-            }
-            :host::-webkit-scrollbar { width: 12px; height: 12px; }
-            :host::-webkit-scrollbar-track { background: transparent; }
-            :host::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 9999px; border: 3px solid transparent; background-clip: padding-box; }
-            :host::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.5); border: 3px solid transparent; background-clip: padding-box; }
+            }${scrollbarCSS}
             .container {
                 display: flex;
                 flex-direction: column;
