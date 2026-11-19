@@ -2,13 +2,7 @@ const pdfjsPath = path => new URL(`vendor/pdfjs/${path}`, import.meta.url).toStr
 
 import './vendor/pdfjs/pdf.mjs'
 const pdfjsLib = globalThis.pdfjsLib
-// Workers are constructed per-document in makePDF() and passed via
-// `workerPort`. We deliberately don't set `workerSrc`: under custom
-// schemes (tauri://, asset://) pdf.js treats the page origin as opaque
-// ("null") and wraps the worker in a blob: that re-imports the worker
-// URL. macOS 14.x WKWebView stalls silently on that pattern. Going
-// through `workerPort` routes us into pdf.js's `#initializeFromPort`,
-// which skips the blob wrapper entirely.
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsPath('pdf.worker.mjs')
 
 const fetchText = async url => await (await fetch(url)).text()
 
@@ -230,11 +224,6 @@ const renderPage = async (page, getImageBlob) => {
             user-select: text;
         }
         ${textLayerBuilderCSS}
-        /* override pdfjs selection color for consistent appearance in WebKit;
-           AccentColor/color-mix can be unreliable in iframe contexts */
-        .textLayer ::selection {
-            background: rgba(56 117 215 / 0.25);
-        }
         ${annotationLayerBuilderCSS}
         </style>
         <div id="canvas"></div>
@@ -269,25 +258,17 @@ export const makePDF = async file => {
             transport.onDataRange(begin, chunk)
         })
     }
-    // See the top-of-file note for why this isn't `workerSrc`. We own the
-    // Worker's lifecycle because pdf.js doesn't terminate ports it didn't
-    // construct itself (pdf.mjs `PDFWorker.destroy`).
-    const worker = new Worker(pdfjsPath('pdf.worker.mjs'), { type: 'module' })
-    pdfjsLib.GlobalWorkerOptions.workerPort = worker
-
-    // Until `return book`, no caller has a handle to terminate the Worker:
-    // `view.open()` doesn't assign `this.book = book` until `makePDF()`
-    // resolves, so a throw from any await below (`getDocument`,
-    // `getMetadata`, `getOutline`) would orphan the Worker. Single cleanup
-    // path: tear down pdf if it exists, then terminate the Worker.
-    let pdf
+    // Destroying the loading task terminates the worker pdf.js created for
+    // it. `view.open()` only gets a handle via `book.destroy` once this
+    // resolves, so a failure below must destroy the task itself.
+    const task = pdfjsLib.getDocument({
+        range: transport,
+        cMapUrl: pdfjsPath('cmaps/'),
+        standardFontDataUrl: pdfjsPath('standard_fonts/'),
+        isEvalSupported: false,
+    })
     try {
-        pdf = await pdfjsLib.getDocument({
-            range: transport,
-            cMapUrl: pdfjsPath('cmaps/'),
-            standardFontDataUrl: pdfjsPath('standard_fonts/'),
-            isEvalSupported: false,
-        }).promise
+        const pdf = await task.promise
 
         const book = { rendition: { layout: 'pre-paginated' } }
 
@@ -358,20 +339,10 @@ export const makePDF = async file => {
         }
         book.getTOCFragment = doc => doc.documentElement
         book.getCover = async () => renderPage(await pdf.getPage(1), true)
-        book.destroy = () => {
-            // Same shape as the setup catch path above: pdf.destroy() can
-            // stall on a wedged worker, so don't await — fire-and-forget
-            // and unconditionally terminate the Worker we own.
-            pdf.destroy?.()?.catch?.(() => {})
-            worker.terminate()
-        }
+        book.destroy = () => task.destroy()
         return book
     } catch (err) {
-        // pdf.destroy() can stall on a wedged worker — fire-and-forget so
-        // the original error propagates without being shadowed by teardown.
-        // Always terminate the Worker; that's the resource we actually own.
-        pdf?.destroy?.()?.catch?.(() => {})
-        worker.terminate()
+        task.destroy().catch(() => {})
         throw err
     }
 }

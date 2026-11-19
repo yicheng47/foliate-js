@@ -304,10 +304,8 @@ export class View extends HTMLElement {
     close() {
         this.renderer?.destroy()
         this.renderer?.remove()
-        // Release book-owned resources (PDF.js Worker, etc.). Fire-and-forget:
-        // pdf.destroy() can stall if its worker is wedged, and close() must
-        // stay synchronous for the rest of the cleanup. The catch swallows
-        // teardown noise (we're tearing down anyway).
+        // Release book-owned resources (the PDF.js document and its worker).
+        // Fire-and-forget: close() must stay synchronous.
         this.book?.destroy?.()?.catch?.(() => {})
         this.book = null
         this.#sectionProgress = null
