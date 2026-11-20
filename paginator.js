@@ -1,3 +1,5 @@
+import { scrollbarCSS, showScrollbarWhileScrolling } from './scrollbar.js'
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 const debounce = (f, wait, immediate) => {
@@ -466,21 +468,6 @@ export class Paginator extends HTMLElement {
     #lastVisibleRange
     constructor() {
         super()
-        const isApplePlatform = typeof navigator !== 'undefined'
-            && /Macintosh|iPhone|iPad|iPod/.test(navigator.userAgent)
-        const scrollbarCSS = isApplePlatform ? '' : `
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb {
-            background-color: var(--scrollbar-thumb, rgba(128, 128, 128, 0.3));
-            border: 2px solid transparent;
-            background-clip: content-box;
-            border-radius: 9999px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background-color: var(--scrollbar-thumb-hover, rgba(128, 128, 128, 0.5));
-        }
-        ::-webkit-scrollbar-corner { background: transparent; }`
         this.#root.innerHTML = `<style>
         :host {
             display: block;
@@ -542,7 +529,7 @@ export class Paginator extends HTMLElement {
             grid-column: 1 / -1;
             grid-row: 1 / -1;
             overflow: auto;
-        }${scrollbarCSS}
+        }${scrollbarCSS('#container', '#container[scrolling]')}
         #header {
             grid-column: 3 / 4;
             grid-row: 1;
@@ -586,6 +573,7 @@ export class Paginator extends HTMLElement {
         this.#footer = this.#root.getElementById('footer')
 
         this.#observer.observe(this.#container)
+        showScrollbarWhileScrolling(this.#container)
         this.#container.addEventListener('scroll', () => this.dispatchEvent(new Event('scroll')))
         this.#container.addEventListener('scroll', debounce(() => {
             if (this.scrolled) {

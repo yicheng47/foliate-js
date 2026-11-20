@@ -1,3 +1,5 @@
+import { scrollbarCSS, showScrollbarWhileScrolling } from './scrollbar.js'
+
 // foliate-pdf-scroll — continuous vertical scroll renderer for PDFs.
 //
 // Mirrors the public surface of `foliate-fxl` enough for `foliate-view` to
@@ -34,21 +36,6 @@ export class PDFScroll extends HTMLElement {
 
     constructor() {
         super()
-        const isApplePlatform = typeof navigator !== 'undefined'
-            && /Macintosh|iPhone|iPad|iPod/.test(navigator.userAgent)
-        const scrollbarCSS = isApplePlatform ? '' : `
-            :host::-webkit-scrollbar { width: 8px; height: 8px; }
-            :host::-webkit-scrollbar-track { background: transparent; }
-            :host::-webkit-scrollbar-thumb {
-                background-color: var(--scrollbar-thumb, rgba(128, 128, 128, 0.3));
-                border: 2px solid transparent;
-                background-clip: content-box;
-                border-radius: 9999px;
-            }
-            :host::-webkit-scrollbar-thumb:hover {
-                background-color: var(--scrollbar-thumb-hover, rgba(128, 128, 128, 0.5));
-            }
-            :host::-webkit-scrollbar-corner { background: transparent; }`
         const sheet = new CSSStyleSheet()
         sheet.replaceSync(`
             :host {
@@ -57,7 +44,7 @@ export class PDFScroll extends HTMLElement {
                 height: 100%;
                 overflow: auto;
                 background: var(--page-bg, transparent);
-            }${scrollbarCSS}
+            }${scrollbarCSS(':host', ':host([scrolling])')}
             .container {
                 display: flex;
                 flex-direction: column;
@@ -102,6 +89,7 @@ export class PDFScroll extends HTMLElement {
         this.#container.className = 'container'
         this.#root.append(this.#container)
         this.addEventListener('scroll', () => this.#onScroll())
+        showScrollbarWhileScrolling(this)
     }
 
     relayout() {

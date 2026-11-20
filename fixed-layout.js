@@ -1,3 +1,5 @@
+import { scrollbarCSS, showScrollbarWhileScrolling } from './scrollbar.js'
+
 const parseViewport = str => str
     ?.split(/[,;\s]/) // NOTE: technically, only the comma is valid
     ?.filter(x => x)
@@ -51,28 +53,6 @@ export class FixedLayout extends HTMLElement {
     constructor() {
         super()
 
-        const isApplePlatform = typeof navigator !== 'undefined'
-            && /Macintosh|iPhone|iPad|iPod/.test(navigator.userAgent)
-        const scrollbarCSS = isApplePlatform ? '' : `
-        :host::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        :host::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        :host::-webkit-scrollbar-thumb {
-            background-color: var(--scrollbar-thumb, rgba(128, 128, 128, 0.3));
-            border: 2px solid transparent;
-            background-clip: content-box;
-            border-radius: 9999px;
-        }
-        :host::-webkit-scrollbar-thumb:hover {
-            background-color: var(--scrollbar-thumb-hover, rgba(128, 128, 128, 0.5));
-        }
-        :host::-webkit-scrollbar-corner {
-            background: transparent;
-        }`
         const sheet = new CSSStyleSheet()
         this.#root.adoptedStyleSheets = [sheet]
         sheet.replaceSync(`:host {
@@ -82,8 +62,9 @@ export class FixedLayout extends HTMLElement {
             justify-content: center;
             align-items: center;
             overflow: auto;
-        }${scrollbarCSS}`)
+        }${scrollbarCSS(':host', ':host([scrolling])')}`)
 
+        showScrollbarWhileScrolling(this)
         this.#observer.observe(this)
     }
     relayout() {
