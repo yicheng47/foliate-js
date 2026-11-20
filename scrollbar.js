@@ -19,11 +19,35 @@ export const scrollbarCSS = (scroller, active) => `
         background-color: var(--scrollbar-thumb-hover, rgba(128, 128, 128, 0.5));
     }`
 
+// Chromium ignores :host::-webkit-scrollbar-thumb:hover, so pointer hover over
+// the scrollbar is tracked here and shares the attribute with scrolling.
 export const showScrollbarWhileScrolling = el => {
     let timer
-    el.addEventListener('scroll', () => {
+    let hovering = false
+    const show = () => {
+        clearTimeout(timer)
         el.setAttribute('scrolling', '')
+    }
+    const hideLater = () => {
         clearTimeout(timer)
         timer = setTimeout(() => el.removeAttribute('scrolling'), 1000)
+    }
+    el.addEventListener('scroll', () => {
+        show()
+        if (!hovering) hideLater()
     }, { passive: true })
+    el.addEventListener('pointermove', e => {
+        const rect = el.getBoundingClientRect()
+        const over = e.clientX >= rect.left + el.clientLeft + el.clientWidth
+            || e.clientY >= rect.top + el.clientTop + el.clientHeight
+        if (over === hovering) return
+        hovering = over
+        if (over) show()
+        else hideLater()
+    })
+    el.addEventListener('pointerleave', () => {
+        if (!hovering) return
+        hovering = false
+        hideLater()
+    })
 }
