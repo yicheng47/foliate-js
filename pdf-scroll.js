@@ -89,7 +89,7 @@ export class PDFScroll extends HTMLElement {
         this.#container.className = 'container'
         this.#root.append(this.#container)
         this.addEventListener('scroll', () => this.#onScroll())
-        showScrollbarWhileScrolling(this)
+        showScrollbarWhileScrolling(this, this.#root)
     }
 
     relayout() {

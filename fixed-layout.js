@@ -64,7 +64,7 @@ export class FixedLayout extends HTMLElement {
             overflow: auto;
         }${scrollbarCSS(':host', ':host([scrolling])')}`)
 
-        showScrollbarWhileScrolling(this)
+        showScrollbarWhileScrolling(this, this.#root)
         this.#observer.observe(this)
     }
     relayout() {

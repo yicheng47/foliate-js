@@ -20,8 +20,10 @@ export const scrollbarCSS = (scroller, active) => `
     }`
 
 // Chromium ignores :host::-webkit-scrollbar-thumb:hover, so pointer hover over
-// the scrollbar is tracked here and shares the attribute with scrolling.
-export const showScrollbarWhileScrolling = el => {
+// the scrollbar is tracked here and shares the attribute with scrolling. `root`
+// is the shadow root when `el` is its host: events from content inside it never
+// reach the host as boundary events.
+export const showScrollbarWhileScrolling = (el, root = el) => {
     let timer
     let hovering = false
     const show = () => {
@@ -32,6 +34,11 @@ export const showScrollbarWhileScrolling = el => {
         clearTimeout(timer)
         timer = setTimeout(() => el.removeAttribute('scrolling'), 1000)
     }
+    const unhover = () => {
+        if (!hovering) return
+        hovering = false
+        hideLater()
+    }
     el.addEventListener('scroll', () => {
         show()
         if (!hovering) hideLater()
@@ -41,13 +48,15 @@ export const showScrollbarWhileScrolling = el => {
         const over = e.clientX >= rect.left + el.clientLeft + el.clientWidth
             || e.clientY >= rect.top + el.clientTop + el.clientHeight
         if (over === hovering) return
-        hovering = over
-        if (over) show()
-        else hideLater()
+        if (over) {
+            hovering = true
+            show()
+        } else unhover()
     })
-    el.addEventListener('pointerleave', () => {
-        if (!hovering) return
-        hovering = false
-        hideLater()
+    el.addEventListener('pointerleave', unhover)
+    // A book iframe swallows the moves that would clear the hover, so entering
+    // any content clears it.
+    root.addEventListener('pointerover', e => {
+        if (e.target !== el) unhover()
     })
 }
