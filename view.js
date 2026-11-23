@@ -515,6 +515,9 @@ export class View extends HTMLElement {
         const pageItem = this.#pageProgress?.getProgress(index, range)
         return { tocItem, pageItem }
     }
+    getLocationOf(index, fraction = 0) {
+        return this.#sectionProgress?.getProgress(index, fraction).location ?? null
+    }
     async getTOCItemOf(target) {
         try {
             const { index, anchor } = await this.resolveNavigation(target)
